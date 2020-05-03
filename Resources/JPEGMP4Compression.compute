@@ -1,0 +1,136 @@
+//Two different kernel configurations for both performance modes
+#pragma kernel CSMain ACCURATE
+#pragma kernel CSMain FAST
+
+//The Input/Output Textures
+Texture2D<float4> Last;
+Texture2D<float4> Input;
+RWTexture2D<float4> Result;
+
+//User Settings
+float CompressionThreshold;
+bool UseBitrate;
+float Bitrate;
+
+//Used to quantize the chrominance in Fast mode
+float Quantize(float input, int resolution){
+    input *= resolution;
+    input = floor(input.x);
+    input /= resolution;
+    return input;
+}
+
+//Yuv to RGB color space
+float3 YuvToRGB(float3 yuv){
+    float3 color;
+    color.b = yuv.x + (1.0/0.493) * yuv.y;
+    color.r = yuv.x + (1.0/0.877) * yuv.z;
+    color.g = (1.0/0.587) * yuv.x - (0.299/0.587) * color.r - (0.114/0.587) * color.b;
+    return color;
+}
+
+//RGB to Yuv color space
+float3 RGBToYuv(float3 color){
+    float Y = 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+    float u = 0.493 * (color.b - Y);
+    float v = 0.877 * (color.r - Y);
+    #ifdef FAST
+    u = Quantize(u, lerp(256, 32, CompressionThreshold * 0.5));
+    v = Quantize(v, lerp(256, 32, CompressionThreshold * 0.5));
+    #endif
+    return float3(Y, u, v);
+}
+
+//Shared memory for the color information
+groupshared float3 pixelBlock[8][8];
+//Shared memory for the spectral information
+groupshared float3 dct[8][8];
+
+//Shared memory to determine if a pixelBlock should be updated
+//Only used in the MP4 compression
+groupshared bool update;
+
+[numthreads(8,8,1)]
+//8x8 threads are ideal for this algorithm since the Discrete Cosine Transform used in JPEG compression operates
+//on an 8x8 block of pixels
+void CSMain (uint3 id : SV_DispatchThreadID, uint3 groupThreadID : SV_GroupThreadID, uint3 groupID : SV_GroupID)
+{
+    //Loop indices are defined outside of any loops because HLSL likes to complain about it otherwise
+    int ix, iy;
+    
+    //Fetch Input Pixels and Convert to Yuv
+    pixelBlock[groupThreadID.x][groupThreadID.y] = RGBToYuv(Input[groupThreadID.xy + groupID.xy * 8].rgb);
+    GroupMemoryBarrierWithGroupSync();
+
+    //This part is WIP!
+    if(groupThreadID.x == 0 && groupThreadID.y == 0 && UseBitrate){
+        update = false;
+        float lastLuminance = RGBToYuv(Last[groupID.xy * 8].rgb).r;
+        float difference = saturate(pixelBlock[groupThreadID.x][groupThreadID.y].r - lastLuminance);
+        if(difference <= Bitrate)
+            update = true;
+    }
+    if(UseBitrate)
+        GroupMemoryBarrierWithGroupSync();
+    if(UseBitrate && !update){
+        pixelBlock[groupThreadID.x][groupThreadID.y] = Last[groupThreadID.xy + groupID.xy * 8].rgb;
+        return;
+    }
+
+    //Perform the DCT on each pixel in this thread group
+    dct[groupThreadID.x][groupThreadID.y] = 0.0;
+    for(ix = 0; ix < 8; ix++){
+        for(iy = 0; iy < 8; iy++){
+            float factor = cos((3.141592654 * (2 * ix + 1) * groupThreadID.x) / 16.0) 
+                         * cos((3.141592654 * (2 * iy + 1) * groupThreadID.y) / 16.0);
+            dct[groupThreadID.x][groupThreadID.y].r += pixelBlock[ix][iy].r * factor;
+            #ifdef ACCURATE
+            dct[groupThreadID.x][groupThreadID.y].g += pixelBlock[ix][iy].g * factor;
+            dct[groupThreadID.x][groupThreadID.y].b += pixelBlock[ix][iy].b * factor;
+            #endif
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    //Quantize the DCT coefficients
+    //In reality this uses 8x8 Quantization tables for luminance and chrominance,
+    //however simply eliminating all coefficients below a set threshold works just as well
+    if(abs(dct[groupThreadID.x][groupThreadID.y].r) < CompressionThreshold)
+        dct[groupThreadID.x][groupThreadID.y].r = 0.0;
+    #ifdef ACCURATE
+    if(abs(dct[groupThreadID.x][groupThreadID.y].g) < CompressionThreshold)
+        dct[groupThreadID.x][groupThreadID.y].g = 0.0;
+    if(abs(dct[groupThreadID.x][groupThreadID.y].b) < CompressionThreshold)
+        dct[groupThreadID.x][groupThreadID.y].b = 0.0;
+    #endif
+    GroupMemoryBarrierWithGroupSync();
+
+    //Perform the inverse DCT
+    #ifdef ACCURATE
+    pixelBlock[groupThreadID.x][groupThreadID.y] = 0.0;
+    #elif FAST
+    pixelBlock[groupThreadID.x][groupThreadID.y].r = 0.0;
+    #endif
+    for(ix = 0; ix < 8; ix++){
+        for(iy = 0; iy < 8; iy++){
+            float3 dctTemp = dct[ix][iy];
+            dctTemp *= (ix == 0 ? 0.353553390593 : 0.5);
+            dctTemp *= (iy == 0 ? 0.353553390593 : 0.5);
+            float factor = cos((3.141592654 * (2 * groupThreadID.x + 1) * ix) / 16.0) 
+                                   * cos((3.141592654 * (2 * groupThreadID.y + 1) * iy) / 16.0);
+            pixelBlock[groupThreadID.x][groupThreadID.y].r += dctTemp.r * factor;
+            #ifdef ACCURATE
+            pixelBlock[groupThreadID.x][groupThreadID.y].g += dctTemp.g * factor;
+            pixelBlock[groupThreadID.x][groupThreadID.y].b += dctTemp.b * factor;
+            #endif
+        }
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    //Convert to RGB and output
+    #ifdef ACCURATE
+    Result[groupThreadID.xy + groupID.xy * 8] = float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * 0.125), 1.0);
+    #elif FAST
+    Result[groupThreadID.xy + groupID.xy * 8] = float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * float3(0.125, 1.0, 1.0)), 1.0);
+    #endif
+}
