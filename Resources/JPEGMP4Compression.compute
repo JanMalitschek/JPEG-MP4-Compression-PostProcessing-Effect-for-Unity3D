@@ -17,6 +17,7 @@ float CompressionThreshold;
 bool UseTemporal;
 bool UseIFrames;
 float Bitrate;
+float BitrateArtifacts;
 //Deternimes if the current frame should be an I-Frame
 bool IsIFrame;
 
@@ -172,11 +173,25 @@ void CSMain (uint3 id : SV_DispatchThreadID, uint3 groupThreadID : SV_GroupThrea
         GroupMemoryBarrierWithGroupSync();
 
         //Convert to RGB and output
-        #ifdef ACCURATE
-        Result[groupThreadID.xy + groupID.xy * 8] = float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * 0.125), 1.0);
-        #elif FAST
-        Result[groupThreadID.xy + groupID.xy * 8] = float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * float3(0.125, 1.0, 1.0)), 1.0);
-        #endif
+        //When using Temporal Compression we need to look out for Bitrate Artifacts
+        if(UseTemporal){
+            //We simply lerp between the processed color and the last frame using the BitrateArtifacts parameter as the percentage
+            #ifdef ACCURATE
+            Result[groupThreadID.xy + groupID.xy * 8] = lerp(float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * 0.125), 1.0),
+                                                            Last[groupThreadID.xy + groupID.xy * 8 - offset], BitrateArtifacts);
+            #elif FAST
+            Result[groupThreadID.xy + groupID.xy * 8] = lerp(float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * float3(0.125, 1.0, 1.0)), 1.0),
+                                                            Last[groupThreadID.xy + groupID.xy * 8 - offset], BitrateArtifacts);
+            #endif
+        }
+        //If not, we simply read the processed color from the pixelBlock
+        else{
+            #ifdef ACCURATE
+            Result[groupThreadID.xy + groupID.xy * 8] = float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * 0.125), 1.0);
+            #elif FAST
+            Result[groupThreadID.xy + groupID.xy * 8] = float4(YuvToRGB(pixelBlock[groupThreadID.x][groupThreadID.y] * float3(0.125, 1.0, 1.0)), 1.0);
+            #endif
+        }
     }
     else
         //If we don't want to use Spacial compression we can just convert the input colors back to RGB and output them

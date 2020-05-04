@@ -59,4 +59,8 @@ public sealed class JPEG_MP4_Compression : PostProcessEffectSettings
     //I won't stop you from going crazy with it though
     [Range(0.0f, 1.0f), Tooltip("Bitrate")]
     public FloatParameter bitrate = new FloatParameter { value = 1.0f };
+    //When a pixelBlock is updated it might still leave behind some artifacts of it's previous contents
+    //Use bitrateArtifacts to control how much should bleed through
+    [Range(0.0f, 0.95f)]
+    public FloatParameter bitrateArtifacts = new FloatParameter { value = 0.0f };
 }

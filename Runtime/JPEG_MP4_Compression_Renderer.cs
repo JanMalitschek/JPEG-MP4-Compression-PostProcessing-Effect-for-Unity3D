@@ -109,6 +109,7 @@ public sealed class JPEG_MP4_Compression_Renderer : PostProcessEffectRenderer<JP
         dctShader.SetFloat("CompressionThreshold", settings.compressionThreshold);
         dctShader.SetBool("UseTemporal", settings.useTemporalCompression.value && Application.isPlaying);
         dctShader.SetFloat("Bitrate", settings.bitrate);
+        dctShader.SetFloat("BitrateArtifacts", settings.bitrateArtifacts);
         //If there are no B-Frames remaining the next frame will be an I-Frame
         //Motion Vectors do not work in the editor window, so we have to make sure that this only takes effect when
         //the game is running
