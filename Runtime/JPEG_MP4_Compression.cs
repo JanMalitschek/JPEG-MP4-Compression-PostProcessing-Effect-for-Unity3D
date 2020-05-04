@@ -15,6 +15,10 @@ public sealed class JPEGPerformanceParameter : ParameterOverride<JPEGPerformance
 [PostProcess(typeof(JPEG_MP4_Compression_Renderer), PostProcessEvent.AfterStack, "Custom/JPEG\\MP4 Compression")]
 public sealed class JPEG_MP4_Compression : PostProcessEffectSettings
 {
+    [Header("Spatial Compression")]
+    //useSpacialCompression controls if the classic JPEG compression should be applied
+    [Tooltip("Use Spatial Compression")]
+    public BoolParameter useSpatialCompression = new BoolParameter { value = true };
     //screenDownsampling determines by which number + 1 the screen resolution should be divided
     //Can help increase performance or simply create an even lower quality look
     [Tooltip("Updates on Play")]
@@ -34,11 +38,25 @@ public sealed class JPEG_MP4_Compression : PostProcessEffectSettings
     public JPEGPerformanceParameter performanceMode = new JPEGPerformanceParameter { value = JPEGPerformance.Accurate };
     //These Parameters are still WIP and will not look accurate
     //useBitrate enables or disables the MP4 interframe compression
-    [Tooltip("Use Bitrate")]
-    public BoolParameter useBitrate = new BoolParameter { value = false };
+
+    //Temporal Compression only works when the game is actually running since motion vectors are not available otherwise
+    [Header("Temporal Compression (Playmode Only)")]
+    //useTemporalCompression controls wether to apply Interframe compression effects
+    [Tooltip("Use Temporal Compression")]
+    public BoolParameter useTemporalCompression = new BoolParameter { value = false };
+    //I-Frames force a complete screen update every few frames(gap depending on the number of B-Frames)
+    //For certain effects like Datamoshing you might want to disable them completely though
+    [Tooltip("Use I-Frames")]
+    public BoolParameter useIFrames = new BoolParameter { value = true };
+    //B-Frames try to predict the look of the next frame by moving tiny parts of the previous frame around
+    //The more B-Frames you use the more noticable the effect
+    [Tooltip("Number of predicted frames")]
+    public IntParameter numBFrames = new IntParameter { value = 8};
     //bitrate controls how many pixelBlocks lag behind on each frame
-    //0.0 is none
-    //1.0 is a lot
+    //1.0 is none
+    //0.0 is a lot
+    //For reasonable effects you should keep it around 0.9 
+    //I won't stop you from going crazy with it though
     [Range(0.0f, 1.0f), Tooltip("Bitrate")]
     public FloatParameter bitrate = new FloatParameter { value = 1.0f };
 }
