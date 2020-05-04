@@ -1,8 +1,8 @@
 {
   "name": "com.jamathan.jpegmp4compression",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "JPEG MP4 Compression PostProcessing Effect",
-  "description": "This package aims to accurately recreate the effect of JPEG/MP4 compression as a PostProcessing Effect.\nThe MP4 Interframe compression is currently WIP and will not look accurate!",
+  "description": "This package aims to accurately recreate the effect of JPEG/MP4 compression as a PostProcessing Effect.",
   "unity": "2019.1",
   "dependencies": {
     "com.unity.postprocessing": "2.2.2"
