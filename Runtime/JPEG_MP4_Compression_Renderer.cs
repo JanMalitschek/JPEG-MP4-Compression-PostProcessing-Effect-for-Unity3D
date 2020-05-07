@@ -34,20 +34,31 @@ public sealed class JPEG_MP4_Compression_Renderer : PostProcessEffectRenderer<JP
         //Calculate the downsampling rate in advance since we will reuse it quite a lot
         int downSamplingRate = Mathf.Max(1, (settings.screenDownsampling + 1));
 
+        //In case we don't want to render directly to the screen, but to a RenderTexture instead,
+        //we need to check if the main cameras targetTexture is not null
+        Vector2Int dimensions;
+        //targetTexture is null, thus we're rendering to the screen and need to use the screen dimensions
+        if(Camera.main.targetTexture == null)
+            dimensions = new Vector2Int(Screen.width / downSamplingRate, Screen.height / downSamplingRate);
+        //targetTexture is not null, thus we're rendering to a RenderTexture and need to use it's dimensions
+        else
+            dimensions = new Vector2Int(Camera.main.targetTexture.width / downSamplingRate, 
+                                        Camera.main.targetTexture.height / downSamplingRate);
+
         //Initialize the lastFrame render target
-        lastFrame = new RenderTexture(Screen.width / downSamplingRate, Screen.height / downSamplingRate, 16);
+        lastFrame = new RenderTexture(dimensions.x, dimensions.y, 16);
         lastFrame.filterMode = settings.usePointFiltering ? FilterMode.Point : FilterMode.Bilinear;
         lastFrame.Create();
         lastFrameIdentifier = new RenderTargetIdentifier(lastFrame);
 
         //Initialize the sourceFrame render target
-        sourceFrame = new RenderTexture(Screen.width / downSamplingRate, Screen.height / downSamplingRate, 16);
+        sourceFrame = new RenderTexture(dimensions.x, dimensions.y, 16);
         sourceFrame.filterMode = settings.usePointFiltering ? FilterMode.Point : FilterMode.Bilinear;
         sourceFrame.Create();
         sourceFrameIdentifier = new RenderTargetIdentifier(sourceFrame);
 
         //Initialize the processed render target
-        processedFrame = new RenderTexture(Screen.width / downSamplingRate, Screen.height / downSamplingRate, 16);
+        processedFrame = new RenderTexture(dimensions.x, dimensions.y, 16);
         //enableRandomWrite must be enabled since this is the texture the compute shader will write to
         processedFrame.enableRandomWrite = true;
         processedFrame.filterMode = settings.usePointFiltering ? FilterMode.Point : FilterMode.Bilinear;
@@ -55,7 +66,7 @@ public sealed class JPEG_MP4_Compression_Renderer : PostProcessEffectRenderer<JP
         processedFrameIdentifier = new RenderTargetIdentifier(processedFrame);
 
         //Initialize the motion vector render target
-        motionFrame = new RenderTexture(Screen.width / downSamplingRate, Screen.height / downSamplingRate, 16,
+        motionFrame = new RenderTexture(dimensions.x, dimensions.y, 16,
                                         GraphicsFormat.R16G16B16A16_SNorm); //This GraphicsFormat is very important!
                                         //In order to make proper use of the motion vectors we need a render target
                                         //with signed values as the motion vectors are in the range of -1.0 to 1.0
